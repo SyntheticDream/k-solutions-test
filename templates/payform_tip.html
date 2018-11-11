@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test pay form</title>
+</head>
+
+<body>
+    <form name="Pay" method="post" action="https://tip.pay-trio.com/ru/" accept-charset="UTF-8">
+        <input type="hidden" name="amount" value="{{ amount }}"/>
+        <input type="hidden" name="currency" value="{{ currency }}"/>
+        <input type="hidden" name="shop_id" value="{{ shop_id }}"/>
+        <input type="hidden" name="sign" value="{{ sign }}"/>
+        <input type="hidden" name="shop_invoice_id" value="{{ shop_invoice_id }}"/>
+        <input type="hidden" name="description" value="{{ description }}"/>
+        <input type="submit" value="Submit TIP request" />
+    </form>
+</body>

@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test pay form</title>
+</head>
+
+<body>
+    <form name="Pay" method="{{data['method']}}" action="{{data['source']}}" accept-charset="UTF-8">
+        {% for k in data['data'].keys() %}
+            <input type="hidden" name="{{ k }}" value="{{ data['data'][k] }}" />
+        {% endfor %}
+        <input type="submit" value="Submit API request" />
+    </form>
+</body>

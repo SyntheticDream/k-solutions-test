@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test pay form</title>
+</head>
+
+<body>
+    <form name="Pay" method="post" action="{{ url_for('submit') }}" accept-charset="UTF-8">
+        <p>Сумма</p>
+        <input type="text" name="amount" value=""/>
+        <p>Валюта</p>
+        <select name="currency">
+            {% for k in available_currencies.keys() %}
+                <option value="{{ available_currencies[k] }}">{{ k }}</option>
+            {% endfor %}
+        </select>
+        <p>Описание товара</p>
+        <textarea name="description" cols="40" rows="5"/></textarea>
+        </br>
+        <input type="submit" value="Оплатить"/>
+    </form>
+</body>
