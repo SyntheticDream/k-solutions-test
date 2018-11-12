@@ -17,16 +17,21 @@ available_currencies = {
     'RUB': '643'   # Invoice Payeer     Invoice form
 }
 
-handler = logging.StreamHandler()
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.INFO)
 
-formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s: \t"
-                              "%(message)s")
-handler.setFormatter(formatter)
+file_handler = logging.FileHandler('payments.log')
+file_handler.setLevel(logging.CRITICAL)
+simple_formatter = logging.Formatter("%(asctime)s - %(message)s")
+file_handler.setFormatter(simple_formatter)
+log.addHandler(file_handler)
 
-log.addHandler(handler)
+stream_handler = logging.StreamHandler()
+flask_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s: \t"
+                                    "%(message)s")
+stream_handler.setFormatter(flask_formatter)
+log.addHandler(stream_handler)
 
 
 def get_secret():
@@ -88,10 +93,13 @@ def submit():
             'currency': c,
             'shop_id': get_shop_id(),
             'shop_order_id': get_shop_order_id(),
-            'description': form.data['description']
         }
 
-        log.info(payment_data)
+        d = form.data.get('description')
+        if d:
+            payment_data['description'] = form.data['description']
+
+        log.critical(payment_data)
 
         if c == available_currencies['EUR']:
 
