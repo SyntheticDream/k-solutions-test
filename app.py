@@ -1,117 +1,167 @@
-from flask import Flask, request, render_template
-import requests
+import os
+from hashlib import sha256
+import logging.handlers
 import json
 import uuid
 
-from forms import PaymentForm
+from flask import Flask, request, render_template, redirect
+import requests
 
-import os
-import hashlib
-import logging
-import logging.handlers
+from forms import PaymentForm
 
 app = Flask(__name__)
 
-available_currencies = {'USD': '840', 'EUR': '978'}
+available_currencies = {
+    'USD': '840',  # Bill Piastrix      straight redirect
+    'EUR': '978',  # Pay                Pay form
+    'RUB': '643'   # Invoice Payeer     Invoice form
+}
 
 handler = logging.StreamHandler()
 
 log = logging.getLogger('werkzeug')
 log.setLevel(logging.INFO)
 
-formatter = logging.Formatter(\
-"%(asctime)s - %(levelname)s - %(name)s: \t%(message)s")
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s: \t"
+                              "%(message)s")
 handler.setFormatter(formatter)
 
 log.addHandler(handler)
 
-def get_paytrio_secret():
-    
-    return os.environ['PAYTRIO_SECRET']
+
+def get_secret():
+
+    return os.environ['secretKey']
 
 
 def get_shop_id():
 
-    return os.environ['PAYTRIO_SHOP_ID']
+    return os.environ['shop_id']
 
 
-def get_shop_invoice_id():
+def get_shop_order_id():
 
     invoice_id = uuid.uuid4().hex
 
     return invoice_id
 
-def generate_sign(amount, currency, shop_id, shop_invoice_id, payway=None, description=None):
 
-    if shop_invoice_id is None:
-        shop_invoice_id = get_shop_invoice_id()
+def generate_sign(**kwargs):
+    if kwargs.get('description'):
+        del kwargs['description']
 
-    secret = get_paytrio_secret()
+    params = list(kwargs.keys())
+    params.sort()
 
-    sign_string = '{0}:{1}{2}:{3}:{4}{5}'.format(amount,
-                                   currency,
-                                   (':{}').format(payway) if payway else '',
-                                   shop_id,
-                                   shop_invoice_id,
-                                   secret)
+    string = ''
 
-    sign = hashlib.new('md5', sign_string.encode()).hexdigest()
+    for key in params:
+        string += f':{kwargs[key]}'
+
+    string = string[1:] + get_secret()
+
+    sign = sha256(string.encode()).hexdigest()
 
     return sign
-
 
 
 @app.route('/')
 def homepage():
 
-    return render_template('payform.html', available_currencies=available_currencies)
+    return render_template('payform.html',
+                           available_currencies=available_currencies)
+
 
 @app.route('/submit', methods=['POST'])
 def submit():
 
     form = PaymentForm(request.form)
 
-    if form.validate():
-        payment_data = {'amount' : str(form.data['amount']),
-                        'currency' : form.data['currency'],
-                        'shop_id' : get_shop_id(),
-                        'shop_invoice_id' : get_shop_invoice_id(),
-                        'description': form.data['description']}
+    log.info('Incoming payment. Details:')
 
-        log.info('Incoming payment. Details:')
+    if form.validate():
+        amount = str(round(form.data['amount'], 2))  # 100 -> 100.00
+        c = form.data['currency']
+
+        payment_data = {
+            'amount': amount,
+            'currency': c,
+            'shop_id': get_shop_id(),
+            'shop_order_id': get_shop_order_id(),
+            'description': form.data['description']
+        }
+
         log.info(payment_data)
 
-
-        if form.data['currency'] == available_currencies['USD']:
+        if c == available_currencies['EUR']:
 
             payment_data['sign'] = generate_sign(**payment_data)
 
-            log.info('Signed and rendering TIP payment button')
+            log.info('Rendering "Pay method" form.')
 
-            return render_template('payform_tip.html', **payment_data)
+            return render_template('payform_pay.html', **payment_data)
 
-        elif form.data['currency'] == available_currencies['EUR']:
-
-            payment_data['payway'] = 'payeer_eur'
+        elif c == available_currencies['RUB']:
+            payment_data['payway'] = 'payeer_rub'
             payment_data['sign'] = generate_sign(**payment_data)
 
-            log.info('Signed and and sending API invoice request')
+            log.info('Posting to Piastrix for confirmation')
 
             h = {'Content-Type': 'application/json'}
-            r = requests.post('https://central.pay-trio.com/invoice', data=json.dumps(payment_data), headers=h)
+            r = requests.post('https://core.piastrix.com/invoice/create',
+                              data=json.dumps(payment_data),
+                              headers=h)
+            res = r.json()
+            data = res['data']
 
-            if r.json()['result'] == 'ok':
+            if res['result'] is True and res['message'] == 'Ok':
 
-                log.info('Request success. Rendering API payment button')
-                return render_template('payform_invoice.html', data=r.json()['data'])
+                log.info(data)
+                log.info('Request succeded. Rendering "Invoice method" button')
+                return render_template('payform_invoice.html',
+                                       data=data)
 
             else:
                 log.error('Request failure. Details:')
-                log.error(r.json())
+                log.error(res)
                 return 'Malformed request', 403
 
+        elif c == available_currencies['USD']:
+
+            payment_data['shop_amount'] = payment_data.pop('amount')
+            payment_data['shop_currency'] = payment_data.pop('currency')
+            payment_data['payer_currency'] = payment_data['shop_currency']
+
+            payment_data['sign'] = generate_sign(**payment_data)
+
+            log.info('Posting to Piastrix for confirmation')
+
+            h = {'Content-Type': 'application/json'}
+            r = requests.post('https://core.piastrix.com/bill/create',
+                              data=json.dumps(payment_data),
+                              headers=h)
+            res = r.json()
+            data = res['data']
+
+            if res['result'] is True and res['message'] == 'Ok':
+
+                log.info('Request succeeded. Redirecting via "Bill method"')
+                return redirect(data['url'], code=302)
+
+            else:
+                log.error('Request failed. Details:')
+                log.error(res)
+                return f'Malformed request. Details:<br>{res}', 403
+
     else:
-        return 'Malformed request', 403
+        errs = {}
+        for f, e in form.errors.items():
+            errs[f] = e
+
+        log.error('Bad input:')
+        log.error(errs)
+
+        return f'Bad input<br>{errs}', 403
 
     
 if __name__ == '__main__':
