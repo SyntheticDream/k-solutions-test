@@ -97,7 +97,7 @@ def submit():
 
         d = form.data.get('description')
         if d:
-            payment_data['description'] = form.data['description']
+            payment_data['description'] = d
 
         log.critical(payment_data)
 
